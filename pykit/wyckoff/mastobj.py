@@ -1,0 +1,62 @@
+import numpy as np
+
+import os
+import warnings
+
+
+class MASTobj(object):
+    def __init__(self, allowed_keys, **kwargs):
+        """
+        Initializer for MASTobj.
+        Calls:
+           self.set_keywords
+
+        Sets:
+           self.keywords
+           self.allowed_keys
+
+        Returns:
+           Nothing
+        """
+        self.allowed_keys = allowed_keys
+        self.keywords = self.set_keywords(**kwargs)
+
+    def set_keywords(self, **kwargs):
+        """
+        Takes the self.allowed_keys dictionary, and sets appropiate defaults
+        for keywords given in **kwargs and checks to make sure all keywords in
+        **kwargs are valid
+
+        Calls:
+            Nothing
+
+        Sets:
+            Nothing
+
+        Returns:
+            Keywords
+        """
+        keywords = dict()
+
+        for key, value in self.allowed_keys.items():
+            keywords[key] = value[1]
+
+        for key, value in kwargs.items():
+            if key not in self.allowed_keys:
+                raise RuntimeError('Keyword %s for %s object not found' % \
+                                   (key, self.__class__.__name__))
+
+            if isinstance(value, self.allowed_keys[key][0]):
+                keywords[key] = value
+            else:
+                raise RuntimeError('Keyword %s value invalid' % key)
+
+        return keywords
+
+    def help(self, keyword):
+        if (keyword is 'all'):
+            string = ('%-20s%-20s%-20s%s\n' % ('Keyword', 'Type', 'Default', 'Comment'))
+            for key, value in self.allowed_keys.items():
+                string += ('%-20s%-20s%-20s%s\n' % (key, str(value[0]), str(value[1]), value[2]))
+            print string
+

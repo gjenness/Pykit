@@ -1,0 +1,13 @@
+import os
+import numpy as np
+
+
+def geomread(filename, format=None):
+    print filename
+    if ('poscar' in filename.lower()):
+        from pykit.geometry.vasp import Poscar
+        return Poscar(filename)
+    else:
+        print 'File type', filename, 'not recognized.'
+        raise RuntimeError('Bad file type.')
+

@@ -1,0 +1,215 @@
+""" Module for reading in VASP DOSCAR files"""
+
+import os
+import numpy as np
+
+from pykit.densityofstates.densityofstates import DensityOfStates
+from pykit.geometry import geomread
+
+
+class Doscar(DensityOfStates):
+    """ 
+    Class for reading and handling DOSCAR data.
+    Will automatically detect if spin has been use, and what data is 
+    currently available.
+    """
+    def __init__(self, dosfile='DOSCAR', posfile='POSCAR', status='r'):
+        DensityOfStates.__init__(self, dosfile=dosfile, posfile=posfile, status=status)
+#        print 'Doscar.__init__() called'
+
+        if (posfile is None):
+            posfile = 'POSCAR'
+
+        try:
+            pos = geomread(posfile)
+            self.set_atom_types(pos.get_atom_list())
+        except IOError:
+            print 'POSCAR file %s cannot be found.  Atoms types are set to default.' % poscar
+
+        if (status == 'r'):
+            self.read_dosfile(dosfile)
+
+# read_doscar reads in the DOSCAR, and calls self.process_dos_data to break the DOS into blocks for
+# later analysis
+    def read_dosfile(self, dosfile):
+        try:
+            dosf = open(dosfile, 'r')
+            contents = dosf.readlines()
+            dosf.close()
+        except:
+            raise RuntimeError('File %s does not exist.' % dosfile)
+
+        print 'File %s sucessfully read.' % dosfile
+
+        self.natoms = int(contents[0].split()[0])
+        print 'Found %i atoms.' % self.natoms
+
+        self.npoints = int(contents[5].split()[2])
+        print 'Number of DOS grid points per atom: %i' % self.npoints
+
+# If line 6 has 3 members, it is a non-spin polarized calculation
+# If line 6 has 5 members, it is a spin polarized calculation
+        line6 = len(contents[6].split())
+        if (line6 == 3):
+            self.spin = False
+            print '%s seems to be from a non-spin polarized calculation.' % dosfile
+        elif (line6 == 5):
+            self.spin = True
+            print '%s seems to be from a spin polarized calculation.' % dosfile
+        else:
+            raise RuntimeError('Error in determining spin-polarization.')
+
+        nlines = self.npoints + 6
+        if (nlines == len(contents)):
+            self.pdos = False
+            print '%s seems to not contain PDOS data.' % dosfile
+        else:
+            self.pdos = True
+            print '%s seems to contain PDOS data.' % dosfile
+
+# Check to see if we have a PDOS that is projected onto the angular momentum (OPDOS)
+        if (self.pdos):
+            test = contents[self.npoints + 7].split()
+            if (self.spin):
+                if (len(test) == 19):
+                    self.opdos = True
+            elif (not self.spin):
+                if (len(test) == 10):
+                    self.opdos = True
+
+        self.efermi = float(contents[5].split()[3])
+        print '\nE_{fermi} = %10.5f eV' % self.efermi
+
+        print 'Extracting energies.'
+        for i in range(6, self.npoints + 6):
+            energy = float(contents[i].split()[0])
+            self.energies.append(energy)
+
+        self.energies = np.array(self.energies)
+
+        print 'Zeroing energies to the Fermi level.'
+        self.energies -= self.efermi
+
+# Partition the DOSCAR file.
+        first = 6 # Location of first DOS line
+        last = self.npoints + first - 1 # Location of the last DOS line for the total DOS
+ 
+        if (not self.pdos):
+            data = self.process_dos_data(contents[first:last])
+            self.write_dos('dos.total', data)
+        elif (self.pdos):
+# If we have a PDOS, time to find out where each data block is located
+            for i in range(self.natoms + 1): # loop over the total DOS and then each atom in the system
+                if (i == 0):
+                    label = 'total'
+                else:
+                    label = self.atom_types[i-1] + str(i-1)
+
+                data = self.process_dos_data(contents[first:last+1])
+                data = np.array(data)
+                self.dos_data[label] = [self.energies, data]
+
+                first = last + 2
+                last = first + self.npoints - 1
+
+# process_dos_data takes a block of text and splits out the energies and state populations
+    def process_dos_data(self, lines):
+        if (len(lines) != self.npoints):
+            print 'Number of points %i\nNumber of lines %i' % (self.npoints, len(lines))
+            raise RuntimeError('Mismatch in datapoints!')
+
+        dosdata = list()
+
+        test = len(lines[0].split())  # Used to see if we have a total DOS or not
+        if (test == 3) or (test == 5):
+            total = True
+        else:
+            total = False
+
+        if (total):
+            if (self.spin):
+                for i in range(self.npoints):
+                    tmp = lines[i].split()[1:3]
+                    for i in range(len(tmp)):
+                        tmp[i] = float(tmp[i])
+                    dosdata.append(tmp)
+            elif (not self.spin):
+                for i in range(self.npoints):
+                    tmp = float(lines[i].split()[1])
+                    dosdata.append(tmp)
+        elif (not total):
+            if (self.spin) and (not self.opdos):
+                for i in range(self.npoints):
+                    tmp = lines[i].split()[1:8]
+                    for i in range(len(tmp)):
+                        tmp[i] = float(tmp[i])
+                    dosdata.append(tmp)
+            elif (not self.spin) and (not self.opdos):
+                for i in range(self.npoints):
+                    tmp = lines[i].split()[1:4]
+                    for i in range(len(tmp)):
+                        tmp[i] = float(tmp[i])
+                    dosdata.append(tmp)
+# Next two are related to whether or not we have a DOS projected onto both atom
+# centers and atomic centers.  For now we'll just sum over the angular momentum
+# types.
+            elif (self.spin) and (self.opdos):
+                for i in range(self.npoints):
+                    tmp = lines[i].split()[1:19]
+                    for i in range(len(tmp)):
+                        tmp[i] = float(tmp[i])
+
+                    newdos = list()
+                    newdos.append(tmp[0])
+                    newdos.append(tmp[1])
+                    newdos.append(tmp[2] + tmp[4] + tmp[6])
+                    newdos.append(tmp[3] + tmp[5] + tmp[7])
+                    newdos.append(tmp[8] + tmp[10] + tmp[12] + tmp[14] + tmp[16])
+                    newdos.append(tmp[9] + tmp[11] + tmp[13] + tmp[15] + tmp[17])
+                    dosdata.append(newdos)
+            elif (not self.spin) and (self.opdos):
+                for i in range(self.npoints):
+                    tmp = lines[i].split()[1:10]
+                    for i in range(len(tmp)):
+                        tmp[i] = float(tmp[i])
+
+                    newdos = list()
+                    newdos.append(tmp[0])
+                    newdos.append(tmp[1] + tmp[2] + tmp[3])
+                    newdos.append(tmp[4] + tmp[5] + tmp[6] + tmp[7] + tmp[8])
+                    dosdata.append(newdos)
+
+        return dosdata
+
+#########################################################
+# Time for some utility stand-alone non-class functions #
+#########################################################
+"""
+# write_dos writes a given set of DOS data to a file
+def write_dos(filename, energies, dos):
+    if (len(energies) != len(dos)):
+        print len(energies), len(dos)
+        raise RuntimeError('Mismatch in datapoints!')
+
+    f = open(filename, 'w')
+    print 'Writing DOS data to file %s.' % filename
+
+    for i in range(len(energies)):
+        f.write('%10.5f' % (energies[i]))
+
+        try:
+            for d in dos[i]:
+                f.write('%10.5f' % d)
+        except:
+            f.write('%10.5f' % dos[i])
+
+        f.write('\n')
+
+    f.close()
+    print 'DOS data successfully written.'
+"""
+
+
+
+
+

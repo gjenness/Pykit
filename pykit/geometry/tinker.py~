@@ -1,0 +1,46 @@
+import os
+import numpy as np
+
+from pykit.geometry.geometry import Geometry
+
+
+class Tinker(Geometry):
+    def __init__(self, posfile=None, status='r'):
+        Geometry.__init__(self, posfile=posfile, status=status)
+
+    def read_posfile(self, filename):
+        try:
+            posf = open(filename, 'r')
+            contents = posf.readlines()
+            posf.close()
+        except:
+            raise RuntimeError('File %s does not exist' % filename)
+
+        self.natoms = int(contents[0].split()[0])
+
+        alist = list()
+        pos = list()
+
+        for line in contents[1::]:
+            data = line.split()
+            alist.append(data[1])
+            pos.append(data[2:5])
+
+        self.atom_list = alist
+        self.positions = np.array(pos, dtype='float')
+
+    def write_posfile(self, filename):
+        sym = self.get_atom_list()
+        pos = self.get_positions().copy()
+
+        posf = open(filename, 'w')
+        posf.write('%i - Tinker geometry file prepared by PYKIT\n' % len(sym))
+        for i in range(len(sym)):
+            posf.write('%10i%10s' % (i+1, sym[i]))
+            for j in range(3):
+                posf.write('%16.8f' % pos[i, j])
+            posf.write('%10i\n' % atomic_number[sym[i]])
+
+
+
+

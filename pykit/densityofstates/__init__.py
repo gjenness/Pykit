@@ -1,0 +1,95 @@
+import os, math
+import numpy as np
+import matplotlib.pyplot as plt
+
+from pykit.utility import convert2list
+
+
+def dosread(filename, posfile=None, format=None, new=False):
+    """
+    Reads in the density of states from a file.
+    Returns a DensityOfStates object
+    """
+
+    if ('doscar' in filename.lower()):
+        if (new):
+            from pykit.densityofstates.vasp_new import Doscar
+            return Doscar(filename, posfile=posfile)
+        elif (not new):
+            from pykit.densityofstates.vasp import Doscar
+            return Doscar(filename, posfile=posfile)
+
+    else:
+        print 'File type', filename, 'not recognized.'
+        raise RuntimeError('Bad file type.')
+
+def doswrite(filename, energies, dos, format=None):
+    """
+    Function for writing the DOS into different file types
+    Why would anyone need this....
+    """
+    raise NotImplementedError
+
+def dosplot(filename=None, energies=list(), dos=list(), plottype='chemist',
+            legend=list(), location=1, erange=list(), staterange=list()):
+    """
+    Wrapper for plotting the DOS with Matplotlib
+
+    For the legend location guide, see:
+        http://matplotlib.org/users/legend_guide.html#legend-location
+    """
+
+    doslist = convert2list(dos)
+    legendlist = convert2list(legend)
+
+    if (len(doslist) != len(legendlist)):
+        print 'Number of DOS: ', len(doslist)
+        print 'Number of legends: ', len(legendlist)
+        raise RuntimeError('Number of legends does not match number of lines')
+
+    if (plottype == 'chemist'):
+        x = energies
+        plt.xlabel('Energy (eV)')
+        plt.ylabel('States (ab. units)')
+
+        plotlist = list()
+
+        for i in range(len(doslist)):
+            tmp = plt.plot(x, doslist[i], label=legendlist[i])
+            plotlist.append(tmp)
+
+        if (erange):
+            plt.xlim(erange)
+            minimum = erange[0]
+            maximum = erange[1]
+        else:
+            minimum = math.ceil(energies.min())
+            maximum = math.ceil(energies.max())
+
+        if (staterange):
+            plt.ylim(staterange)
+
+        ticks = np.arange(minimum, maximum+1, 2)
+        plt.xticks(ticks)
+
+    elif (plottype == 'physicist'):
+        y = energies
+        plt.xlabel('States (ab. units)')
+        plt.ylabel('Energy (eV)')
+
+        plotlist = list()
+
+        for i in range(len(doslist)):
+            tmp = plt.plot(doslist[i], y, label=legendlist[i])
+            plotlist.append(tmp)
+
+        if (erange):
+            plt.ylim(erange)
+
+        if (staterange):
+            plt.xlim(staterange)
+
+    plt.legend(loc=location)
+    plt.savefig(filename)
+    plt.close()
+

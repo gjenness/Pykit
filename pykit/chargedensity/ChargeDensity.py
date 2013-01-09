@@ -1,0 +1,323 @@
+import numpy as np
+import os
+import shutil as sh
+
+from pykit.geometry.geometry import Geometry
+
+atomic_numbers = {'H': 1,
+                  'C': 6,
+                  'O': 8,
+                  'Si': 14,
+                  'Ti': 22,
+                  'Rh': 45,
+                 }
+
+
+class chgcar:
+    def __init__(self, filename='CHGCAR', status=None):
+        self.filename = filename
+
+# Initialize some variables to zero or None:
+        self.lattice = 0                   # lattice parameter
+        self.latticevec = np.zeros((3,3))  # lattice vectors
+        self.ntypes = 0                    # number of atom types
+        self.typelist = None               # list of how much of each atom type
+        self.natoms = 0                    # number of atoms
+        self.coordinates = None            # coordinates
+        self.gridpoints = np.zeros((3))    # number of grid points
+        self.chgden = None                 # the charge density
+        self.atomlist = [None]             # list of atom types
+        self.volume = 0.0                  # volume of the unit cell
+
+        if (status == 'r'):
+            self.read()
+        elif (status == None):
+            print 'Initializing class.  Use the read() function to read the CHGCAR file.'
+        else:
+            raise RuntimeError('Status option not recognized')
+
+    def read(self):
+        print 'Reading in CHGCAR file', self.filename+'.'
+
+        f = open(self.filename, 'r')
+        contents = f.readlines()
+        f.close()
+
+# Get the lattice parameter and lattice vectors
+        self.lattice = float(contents[1])
+
+        for i in range(3):
+            for j in range(3):
+                self.latticevec[i, j] = float(contents[i+2].split()[j])
+
+        self.typelist = np.array(contents[5].split(), int)
+        ntypes = len(self.typelist)
+
+        for a in self.typelist:
+            self.natoms += a
+
+        print 'Found', ntypes, 'kinds of atoms, for a total of', self.natoms, 'atoms.'
+
+        self.coordinates = np.zeros((self.natoms, 3))
+        for i in range(self.natoms):
+            for j in range(3):
+                self.coordinates[i,j] = float(contents[i+7].split()[j])
+
+        for i in range(3):
+            self.gridpoints[i] = int(contents[8+self.natoms].split()[i])
+
+        ngrid = 1
+        for i in range(3):
+            ngrid *= int(self.gridpoints[i])
+
+        print 'Found', ngrid, 'grid points.'
+
+# Augmentation charges start at (gridpoints/5 + self.natoms + 9)
+# Since we don't need those (they're only related to PAW psp's), we will not even bother with them
+        print 'Reading in the charge density (Please be patient).'
+        self.chgden = np.zeros((ngrid,5))
+#        for i in range(ngrid/5):
+#            for j in range(5):
+#                self.chgden[i,j] = float(contents[i+self.natoms+9].split()[j])
+#        print self.chgden[0,0]
+
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+        self.chgden = np.zeros((ngx, ngy, ngz))
+
+        f2 = open('tmp', 'w')
+        for i in range(ngrid/5):
+            f2.write(contents[i+self.natoms+9])
+        f2.close()
+
+        f2 = open('tmp', 'r')
+        for zz in range(ngz):
+            for yy in range(ngy):
+                self.chgden[:, yy, zz] = np.fromfile(f2, dtype=float, count=ngx, sep=' ')
+        f2.close()
+
+        contents = None # Clear out the variable contents
+        print 'Charge density read in.\n'
+
+#        f = open('mine.txt', 'w')
+#        for i in range(ngx):
+#            for j in range(ngy):
+#                for k in range(ngz):
+#                    f.write('%10.5f\n' % float(self.chgden[i,j,k]))
+#                f.write('\n')
+#            f.write('\n')
+#        f.close()
+
+#        os.remove('tmp')
+
+
+    def write_chgcar(self, name):
+        print '\nWriting CHGCAR file', name+'.'
+
+        f = open(name, 'w')
+
+        f.write('unknown system\n')
+        f.write('%10.5f\n' % self.lattice)
+
+        for i in range(3):
+            for j in range(3):
+                f.write('%13.6f' % self.latticevec[i,j])
+            f.write('\n')
+
+#        print 'Testing', self.typelist
+#        print self.ntypes
+        for i in range(len(self.typelist)):
+#            print self.typelist[i]
+            f.write('%5i' % self.typelist[i])
+        f.write('\nDirect\n')
+
+        for i in range(self.natoms):
+            for j in range(3):
+#                print self.coordinates[i,j]
+                f.write('%12.6f' % self.coordinates[i,j])
+            f.write('\n')
+
+        f.write('\n')
+        for i in range(3):
+            f.write('%5i' % self.gridpoints[i])
+        f.write('\n')
+
+        ngrid = int(self.gridpoints[0]*self.gridpoints[1]*self.gridpoints[2])
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+
+#        for i in range(ngrid/5):
+#            for j in range(5):
+#                f.write('%18.11e ' % self.chgden[i,j])
+#            f.write('\n')
+
+        for zz in range(ngz):
+            for yy in range(ngy):
+                for xx in range(ngx):
+                    f.write('%22.11e' % self.chgden[xx, yy, zz])
+#                    chksum = xx + yy + zz
+                    if ( (xx + 1) % 5 == 0):
+                        f.write('\n')
+
+        f.close()
+        print 'CHGCAR file', name, 'successfully written.\n'
+
+    def write_cube(self, name):
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+
+        unit_cell = self.latticevec * self.lattice * 1.889726
+
+        fchg = open(name, 'w')
+        fchg.write('CUBE FILE PREPARED BY PYKIT\n')
+        fchg.write('OUTER LOOP: X, MIDDLE LOOP: Y, INNER LOOP: Z\n')
+        fchg.write('%5i' % len(self.coordinates))
+        for i in range(3):
+            fchg.write('%12.6f' % 0.0)
+
+        fchg.write('\n%5i' % ngx)
+        for i in range(3):
+            fchg.write('%12.6f' % (unit_cell[0, i] / ngx))
+
+        fchg.write('\n%5i' % ngy)
+        for i in range(3):
+            fchg.write('%12.6f' % (unit_cell[1, i] / ngy))
+
+        fchg.write('\n%5i' % ngz)
+        for i in range(3):
+            fchg.write('%12.6f' % (unit_cell[2, i] / ngz))
+
+        alist = list()
+        for i in range(len(self.atomlist)):
+            for j in range(self.typelist[i]):
+                alist.append(self.atomlist[i])
+
+        znuc = list()
+        for i in range(len(alist)):
+            znuc.append(atomic_numbers[alist[i]])
+
+        lazy = Geometry(posfile=None, status=None)
+        lazy.set_positions(self.coordinates)
+        lazy.set_unit_cell(self.latticevec)
+        lazy.set_lattice_constant(self.lattice)
+        pos = lazy.direct2cart(self.coordinates)
+
+        for i in range(len(znuc)):
+            fchg.write('\n%5i%16.8f' % (znuc[i], 0.0))
+            for j in range(3):
+                fchg.write('%16.8f' % pos[i, j])
+        fchg.write('\n')
+
+        for xx in range(ngx):
+            for yy in range(ngy):
+                for zz in range(ngz):
+                    fchg.write('%22.11e' % self.chgden[xx, yy, zz])
+                    if ((zz % 6) == 5):
+                        fchg.write('\n')
+
+        fchg.close()
+
+    def write(self, name, filetype):
+        if (filetype.lower() == 'chgcar'):
+            self.write_chgcar(name)
+        elif (filetype.lower() == 'poscar') or (filetype.lower() == 'poscar4'):
+            self.write_poscar(name, 'vasp4')
+        elif (filetype.lower() == 'poscar5'):
+            self.write_poscar(name, 'vasp5')
+        elif (filetype.lower() == 'cube'):
+            self.write_cube(name)
+
+# Calculate functions
+    def integrate(self):
+        print 'Not tested!'
+        den = self.get_charge_density()
+        vol = self.get_volume()
+
+        tmp = [0., 0., 0., 0., 0.]
+
+        for i in range(len(den)):
+            for j in range(5):
+                tmp[j] += den[i,j]
+
+        print tmp
+        print sum(tmp)
+        print sum(sum(den)) / vol
+
+# Overload some operators!
+    def __sub__(self, other):
+        grid1 = self.get_charge_density()
+        grid2 = other.get_charge_density()
+
+        self.__set_charge_density(grid1 - grid2)
+
+        return self
+
+    def __add__(self, other):
+        grid1 = self.get_charge_density().copy()
+        grid2 = other.get_charge_density().copy()
+
+        self.__set_charge_density(grid1 + grid2)
+
+        return self
+
+# Set functions for setting stuff
+    def __set_charge_density(self, chgden):
+        """Sets charge density....VERY DANGEROUS!"""
+        self.chgden = chgden
+
+    def set_atom_labels(self, atomlist):
+        self.atomlist = atomlist
+
+# Get functions for returning stuff
+    def get_volume(self):
+        cell = self.get_lattice_vectors()
+
+        a = cell[0] 
+        b = cell[1]
+        c = cell[2]
+
+        return np.dot(a, np.cross(b, c))
+
+    def get_lattice(self):
+        return self.lattice
+
+    def get_lattice_vectors(self):
+        return self.latticevec
+
+    def get_natoms(self):
+        return self.natoms
+
+    def get_coordinates(self):
+        return self.coordinates
+
+    def get_grid_points(self):
+        return self.gridpoints
+
+    def get_charge_density(self):
+        return self.chgden
+
+    def get_type_list(self):
+        return self.typelist
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
