@@ -1,0 +1,117 @@
+import os, math, time, itertools
+import numpy as np
+
+from pykit.chargedensity.chargedensity import ChargeDensity
+from pykit.geometry import geomread
+
+
+class Chgcar(ChargeDensity):
+    def __init__(self, chgfile='CHGCAR', posfile='POSCAR', status='r'):
+        ChargeDensity.__init__(self, chgfile=chgfile, status=status)
+
+        pos = geomread(posfile)
+        self.atomlist = pos.get_atom_list()
+        self.coordinates = pos.get_positions()
+
+    def read_chgfile(self):
+        f = open(self.chgfile, 'r')
+        contents = f.readlines()
+        f.close()
+
+# Get the lattice parameter and lattice vectors
+        self.lattice = float(contents[1])
+
+        for i in range(3):
+            for j in range(3):
+                self.latticevec[i, j] = float(contents[i+2].split()[j])
+
+        self.typelist = np.array(contents[5].split(), int)
+        ntypes = len(self.typelist)
+
+        for a in self.typelist:
+            self.natoms += a
+
+# Just read in the coordinates, DO NOT save them!
+        coordinates = np.zeros((self.natoms, 3))
+        for i in range(self.natoms):
+            for j in range(3):
+                coordinates[i,j] = float(contents[i+7].split()[j])
+
+        for i in range(3):
+            self.gridpoints[i] = int(contents[8+self.natoms].split()[i])
+
+        ngrid = 1
+        for i in range(3):
+            ngrid *= int(self.gridpoints[i])
+
+# Augmentation charges start at (gridpoints/5 + self.natoms + 9)
+# Since we don't need those (they're only related to PAW psp's), we will not even bother with them
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+        self.chgden = np.zeros((ngx, ngy, ngz))
+
+        tmp = open('tmp', 'w')
+        for con in contents[(self.natoms+9): -1]:
+            tmp.write(con)
+        tmp.write(contents[-1])
+        tmp.close()
+
+        f2 = open('tmp', 'r')
+        for zz in range(ngz):
+            for yy in range(ngy):
+                self.chgden[:, yy, zz] = np.fromfile(f2, dtype=float, count=ngx, sep=' ')
+        f2.close()
+
+        contents = None # Clear out the variable contents
+
+    def write_chgfile(self, name):
+        f = open(name, 'w')
+
+        f.write('unknown system\n')
+        f.write('%10.5f\n' % self.lattice)
+
+        for i in range(3):
+            for j in range(3):
+                f.write('%13.6f' % self.latticevec[i,j])
+            f.write('\n')
+
+        unique_atoms = list()
+        for list_, count in itertools.groupby(self.atomlist):
+            number = 0
+            for c in count:
+                number += 1
+            unique_atoms.append([list_, number])
+
+        natoms = 0
+        for atom in unique_atoms:
+            f.write('%5i' % (atom[1]))
+            natoms += atom[1]
+        f.write('\nDirect\n')
+
+        for i in range(natoms):
+            for j in range(3):
+                f.write('%12.6f' % self.coordinates[i,j])
+            f.write('\n')
+
+        f.write('\n')
+        for i in range(3):
+            f.write('%5i' % self.gridpoints[i])
+        f.write('\n')
+
+        ngrid = int(self.gridpoints[0]*self.gridpoints[1]*self.gridpoints[2])
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+
+        count = 0
+        for zz in range(ngz):
+            for yy in range(ngy):
+                for xx in range(ngx):
+                    count += 1
+                    f.write('%22.11e' % self.chgden[xx, yy, zz])
+                    if (count % 5 == 0):
+                        f.write('\n')
+
+        f.close()
+#        print 'CHGCAR file', name, 'successfully written.\n'

@@ -1,0 +1,166 @@
+import os, math
+import numpy as np
+
+from pykit.geometry import geomread
+from pykit.utility import convert2list, integrate
+
+
+class ChargeDensity:
+    def __init__(self, chgfile=None, status=None):
+        self.chgfile = chgfile
+
+# Initialize some variables to zero or None:
+        self.lattice = 0                   # lattice parameter
+        self.latticevec = np.zeros((3,3))  # lattice vectors
+        self.ntypes = 0                    # number of atom types
+        self.typelist = None               # list of how much of each atom type
+        self.natoms = 0                    # number of atoms
+        self.coordinates = None            # coordinates
+        self.gridpoints = np.zeros((3))    # number of grid points
+        self.chgden = None                 # the charge density
+        self.atomlist = list()             # list of atom types
+        self.volume = 0.0                  # volume of the unit cell
+
+        if (status == 'r'):
+            print 'Reading in charge density file type %s' % self.__class__.__name__.upper()
+            print 'Please be patient'
+
+            self.read_chgfile()
+
+            print 'Found %i atoms' % (self.natoms)
+            print 'Found %i grid points' % len(self.chgden)
+            print 'Charge density successfully read in.'
+            print '\n'
+
+#######################################################
+# Next two functions are defined by the derived class #
+#######################################################
+    def read_chgfile(self, chgfile):
+        raise NotImplementedError
+
+    def write_chgfile(self, name):
+        raise NotImplementedError
+
+####################################################################################
+# Remaining class functions should not be changed when creating the derived class! #
+####################################################################################
+
+#####################
+# Utility Functions #
+#####################
+    def integrate(self):
+        print 'Not tested!'
+        den = self.get_charge_density()
+        vol = self.get_volume()
+
+        tmp = [0., 0., 0., 0., 0.]
+
+        for i in range(len(den)):
+            for j in range(5):
+                tmp[j] += den[i,j]
+
+        print tmp
+        print sum(tmp)
+        print sum(sum(den)) / vol
+
+    def __sub__(self, other):
+        gptsdiff = self.gridpoints - other.get_grid_points()
+        celldiff = self.latticevec - other.get_lattice_vectors()
+
+        if (gptsdiff.any() != 0.0):
+            print 'Mismatch in grid point spacing:', gptsdiff
+            raise RuntimeError('Mismatched grid')
+
+        if (celldiff.any() > 0.00001):
+            print 'Mismatch in lattice vectors:', celldiff
+            raise RuntimeError('Mismatched vectors')
+
+        grid1 = self.get_charge_density()
+        grid2 = other.get_charge_density()
+
+        self._set_charge_density(grid1 - grid2)
+
+        return self
+
+    def __add__(self, other):
+        gptsdiff = self.gridpoints - other.get_grid_points()
+        celldiff = self.latticevec - other.get_lattice_vectors()
+
+        if (gptsdiff.any() != 0.0):
+            print 'Mismatch in grid point spacing:', gptsdiff
+            raise RuntimeError('Mismatched grid')
+
+        if (celldiff.any() > 0.00001):
+            print 'Mismatch in lattice vectors:', celldiff
+            raise RuntimeError('Mismatched vectors')
+
+
+        grid1 = self.get_charge_density().copy()
+        grid2 = other.get_charge_density().copy()
+
+        self._set_charge_density(grid1 + grid2)
+
+        return self
+
+#################
+# Set Functions #
+#################
+    def _set_charge_density(self, chgden):
+        """Sets charge density....VERY DANGEROUS!"""
+        self.chgden = chgden
+
+    def set_atom_labels(self, atomlist):
+        self.atomlist = atomlist
+
+    def set_lattice(self, lattice):
+        self.lattice = lattice
+
+    def set_lattice_vectors(self, latvec):
+        self.latticevec = latvec
+
+    def set_coordinates(self, coord):
+        self.coordinates = coord
+
+    def set_grid_points(self, gpts):
+        self.gridpoints = gpts
+
+#################
+# Get Functions #
+#################
+    def get_volume(self):
+        """Returns the volume"""
+        cell = self.get_lattice_vectors()
+
+        a = cell[0] 
+        b = cell[1]
+        c = cell[2]
+
+        return np.dot(a, np.cross(b, c))
+
+    def get_lattice(self):
+        """Returns the lattice parameter"""
+        return self.lattice
+
+    def get_lattice_vectors(self):
+        """Returns the lattice vectors"""
+        return self.latticevec
+
+    def get_natoms(self):
+        """Returns the number of atoms"""
+        return self.natoms
+
+    def get_coordinates(self):
+        """Returns the coordinates of the atoms"""
+        return self.coordinates
+
+    def get_grid_points(self):
+        """Returns the number of grid points"""
+        return self.gridpoints
+
+    def get_charge_density(self):
+        """Returns the charge density"""
+        return self.chgden
+
+    def get_atom_list(self):
+        """Returns a list of each atom"""
+        return self.atomlist

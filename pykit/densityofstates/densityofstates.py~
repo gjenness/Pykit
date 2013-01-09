@@ -199,8 +199,8 @@ class DensityOfStates:
                         exclude=None, include=None, erange=None):
 
         if (erange == None):
-            erange = [self.energies[0], self.energies[-1]]
-#            erange = 'fermi'
+#            erange = [self.energies[0], self.energies[-1]]
+            erange = 'fermi'
 
         filling = self.get_band_filling(band=band, atomtype=atomtype,
                                       include=include, exclude=exclude, erange=erange)

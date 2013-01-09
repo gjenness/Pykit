@@ -153,13 +153,16 @@ class chgcar:
 #                f.write('%18.11e ' % self.chgden[i,j])
 #            f.write('\n')
 
+        count = 0
         for zz in range(ngz):
             for yy in range(ngy):
                 for xx in range(ngx):
+                    count += 1
                     f.write('%22.11e' % self.chgden[xx, yy, zz])
 #                    chksum = xx + yy + zz
-                    if ( (xx + 1) % 5 == 0):
-                        f.write('\n')
+                    if (count % 5 == 0):
+#                    if ( (xx + 1) % 5 == 0):
+                        f.write(' %i blah\n' % (xx+1))
 
         f.close()
         print 'CHGCAR file', name, 'successfully written.\n'
@@ -251,7 +254,7 @@ class chgcar:
         grid1 = self.get_charge_density()
         grid2 = other.get_charge_density()
 
-        self.set_charge_density(grid1 - grid2)
+        self.__set_charge_density(grid1 - grid2)
 
         return self
 

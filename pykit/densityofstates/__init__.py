@@ -31,7 +31,7 @@ def doswrite(filename, energies, dos, format=None):
     raise NotImplementedError
 
 def dosplot(filename=None, energies=list(), dos=list(), plottype='chemist',
-            legend=list(), location=1, erange=list(), staterange=list()):
+            legend=list(), location=1, erange=list(), staterange=list(), add_plot=False):
     """
     Wrapper for plotting the DOS with Matplotlib
 
@@ -91,5 +91,6 @@ def dosplot(filename=None, energies=list(), dos=list(), plottype='chemist',
 
     plt.legend(loc=location)
     plt.savefig(filename)
-    plt.close()
+    if (not add_plot):
+        plt.close()
 

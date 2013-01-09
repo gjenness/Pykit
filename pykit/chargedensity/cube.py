@@ -1,0 +1,116 @@
+import os, math
+import numpy as np
+
+from pykit.chargedensity.chargedensity import ChargeDensity
+from pykit.geometry import geomread
+
+atomic_number = {
+'H' : 1,                                                                                                                                                 'He': 2,
+'Li': 3, 'Be': 4,                                                                                           'B' : 5, 'C' : 6, 'N' : 7, 'O' : 8, 'F' : 9, 'Ne':10,
+'Na':11, 'Mg':12,                                                                                           'Al':13, 'Si':14, 'P' :15, 'S' :16, 'Cl':17, 'Ar':18,
+'K' :19, 'Ca':20, 'Sc':21, 'Ti':22, 'V' :23, 'Cr':24, 'Mn':25, 'Fe':26, 'Co':27, 'Ni':28, 'Cu':29, 'Zn':30, 'Ga':31, 'Ge':32, 'As':33, 'Se':34, 'Br':35, 'Kr':36,
+'Rb':37, 'Sr':38, 'Y' :39, 'Zr':40, 'Nb':41, 'Mo':42, 'Tc':43, 'Ru':44, 'Rh':45, 'Pd':46, 'Ag':47, 'Cd':48, 'In':49, 'Sn':50, 'Sb':51, 'Te':52, 'I' :53, 'Xe':54,
+'Cs':55, 'Ba':56,          'Hf':72, 'Ta':73, 'W' :74, 'Re':75, 'Os':76, 'Ir':77, 'Pt':78, 'Au':79, 'Hg':80, 'Tl':81, 'Pb':82, 'Bi':83, 'Po':84, 'At':85, 'Rn':86,
+                }
+
+class Cube(ChargeDensity):
+    def __init__(self, chgfile='file.cube', status='r'):
+        ChargeDensity.__init__(self, chgfile=chgfile, status=status)
+
+    def read_chgfile(self):
+# NOTE:  the cube file format assumes distances are in units of Bohr.
+# So we convert to Angstrom.
+        self.lattice = 1.0 # Cube files don't have a lattice parameter, so we say it's 1
+
+        fchg = open(self.chgfile, 'r')
+        contents = fchg.readlines()
+        fchg.close()
+
+        self.natoms = int(contents[2].split()[0])
+        for i in xrange(3):
+            tmp = contents[i + 3].split()
+            self.gridpoints[i] = int(tmp[0])
+
+            for j in xrange(3):
+                self.latticevec[i, j] = float(tmp[j + 1])
+
+            self.latticevec[i] *= (self.gridpoints[i] / 1.889726)
+
+        anum = list()
+        self.coordinates = np.zeros((self.natoms, 3))
+        for i in range(self.natoms):
+            tmp = contents[i + 6].split()
+            anum.append(int(tmp[0]))
+            for j in xrange(3):
+                self.coordinates[i, j] = (float(tmp[j + 2]) / 1.889726)
+
+        for num in anum:
+            for key, val in atomic_number.items():
+                if (val == num):
+                    self.atomlist.append(key)
+
+        tmp = open('tmp', 'w')
+        for con in contents[(self.natoms+6): -1]:
+            tmp.write(con)
+        tmp.write(contents[-1])
+        tmp.close()
+
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+        self.chgden = np.zeros((ngx, ngy, ngz))
+
+        f2 = open('tmp', 'r')
+        for xx in xrange(ngx):
+            for yy in xrange(ngy):
+                self.chgden[xx, yy, :] = np.fromfile(f2, dtype=float, count=ngz, sep=' ')
+        f2.close()
+
+        contents = None
+
+    def write_chgfile(self, name):
+        ngx = int(self.gridpoints[0])
+        ngy = int(self.gridpoints[1])
+        ngz = int(self.gridpoints[2])
+
+        unit_cell = self.latticevec * self.lattice * 1.889726
+
+        fchg = open(name, 'w')
+        fchg.write('CUBE FILE PREPARED BY PYKIT\n')
+        fchg.write('OUTER LOOP: X, MIDDLE LOOP: Y, INNER LOOP: Z\n')
+        fchg.write('%5i' % len(self.coordinates))
+        for i in range(3):
+            fchg.write('%12.6f' % 0.0)
+
+        fchg.write('\n%5i' % ngx)
+        for i in range(3):
+            fchg.write('%12.6f' % (unit_cell[0, i] / ngx))
+
+        fchg.write('\n%5i' % ngy)
+        for i in range(3):
+            fchg.write('%12.6f' % (unit_cell[1, i] / ngy))
+
+        fchg.write('\n%5i' % ngz)
+        for i in range(3):
+            fchg.write('%12.6f' % (unit_cell[2, i] / ngz))
+
+        znuc = list()
+        for atom in self.atomlist:
+            znuc.append(atomic_number[atom])
+
+        for i in range(len(znuc)):
+            fchg.write('\n%5i%16.8f' % (znuc[i], 0.0))
+            for j in range(3):
+                fchg.write('%16.8f' % (self.coordinates[i, j] * 1.889726))
+        fchg.write('\n')
+
+        count = 0
+        for xx in range(ngx):
+            for yy in range(ngy):
+                for zz in range(ngz):
+                    fchg.write('%22.11e' % self.chgden[xx, yy, zz])
+                    count += 1
+                    if (count % 6 == 0):
+                        fchg.write('\n')
+
+        fchg.close()

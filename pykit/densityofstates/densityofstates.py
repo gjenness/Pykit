@@ -155,6 +155,9 @@ class DensityOfStates:
 #################
 # Get Functions #
 #################
+    def get_fermi_level(self):
+        return self.efermi
+
     def get_energy_grid(self):
         """Returns the energy grid the DOS was calculated on"""
         return self.energies.copy()

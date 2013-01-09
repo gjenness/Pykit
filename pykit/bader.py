@@ -14,15 +14,17 @@ class bader:
 # get_summary will print a summary of results
 # get_atom_charges will return an array of Bader charges
 
-    def __init__(self, restart=False, chgcar='CHGCAR', chgcarsum='CHGCARsum',
+    def __init__(self, restart=False, chgcar='CHGCAR', chgcarsum='CHGCARsum', posfile='POSCAR',
                  datafile='ACF.dat'):
         self.restart = restart
 
         self.chgcar = chgcar
         self.chgcarsum = chgcarsum
+        self.posfile = posfile
         self.datafile = datafile
 
-        self.atom_list = list()
+#        self.atom_list = list()
+        self.atom_list = geomread(self.posfile).get_atom_list()
         self.bader_charges = dict()
 
     def run(self):
@@ -57,18 +59,41 @@ class bader:
             label = self.atom_list[i] + str(i)
             self.bader_charges[label] = atom_charges[i]
 
-    def position_sort(self, positions, coordinate='z'):
+    def position_sort(self, coordinate='z', height=None, symbol=None):
         col = {'x': 0, 'y': 1, 'z': 2}
-        pos = positions[:, col[coordinate]]
+        pos = geomread(self.posfile).get_positions()
         data = list()
 
         for i in range(len(self.atom_list)):
             atom = self.atom_list[i] + str(i)
             charge = self.bader_charges[atom]
-            data.append([atom, pos[i], charge])
+            data.append([atom, pos[i, 0], pos[i, 1], pos[i, 2], charge])
 
-        data = sorted(data, key=lambda t: t[2])
-        print data
+        index = col[coordinate] + 1
+        data = sorted(data, key=lambda t: t[index])
+#        for dat in data:
+#            print dat
+
+#        for i in range(len(data)-1):
+#            print '%-10s%-10s%10.5f%10.5f%10.5f' % (data[i][0], data[i+1][0], data[i+1][3], data[i][3], data[i+1][3] - data[i][3])
+
+        info = list()
+        if (height) and (symbol):
+            for i in range(len(data)):
+                if (symbol in data[i][0]) and (data[i][3] >= height):
+#                    print data[i][0], data[i][3]
+                    print data[i]
+                    info.append([data[i][1], data[i][2], data[i][4]])
+        else:
+            print 'nice try!'
+
+        info = np.array(info)
+        print info
+        for i in range(len(info)):
+            print info[i,0], info[i,1]
+
+        return info
+
 
     def set_atom_list(self, alist):
         self.atom_list = alist

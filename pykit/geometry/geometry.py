@@ -23,7 +23,6 @@ class Geometry:
         self.number_atoms = 0
         self.element_numbers = None
 
-        print status
         if (status == 'r'):
             self.read_posfile(posfile)
 
@@ -43,9 +42,9 @@ class Geometry:
         """Converts between direct coordinates and cartesian coordinates"""
         cell = self.unit_cell.copy() * self.lattice_constant
         for i in range(self.number_atoms):
-            xnew = np.dot(cell[0], positions[i])
-            ynew = np.dot(cell[1], positions[i])
-            znew = np.dot(cell[2], positions[i])
+            xnew = np.dot(cell[:, 0], positions[i])
+            ynew = np.dot(cell[:, 1], positions[i])
+            znew = np.dot(cell[:, 2], positions[i])
 
             positions[i] = np.array([xnew, ynew, znew])
         return positions

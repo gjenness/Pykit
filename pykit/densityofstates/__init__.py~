@@ -16,7 +16,7 @@ def dosread(filename, posfile=None, format=None, new=False):
             from pykit.densityofstates.vasp_new import Doscar
             return Doscar(filename, posfile=posfile)
         elif (not new):
-            from pykit.densityofstates.vasp_new import Doscar
+            from pykit.densityofstates.vasp import Doscar
             return Doscar(filename, posfile=posfile)
 
     else:
@@ -31,7 +31,7 @@ def doswrite(filename, energies, dos, format=None):
     raise NotImplementedError
 
 def dosplot(filename=None, energies=list(), dos=list(), plottype='chemist',
-            legend=list(), location=1, erange=list(), staterange=list()):
+            legend=list(), location=1, erange=list(), staterange=list(), add_plot=False):
     """
     Wrapper for plotting the DOS with Matplotlib
 

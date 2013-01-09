@@ -153,12 +153,13 @@ class chgcar:
 #                f.write('%18.11e ' % self.chgden[i,j])
 #            f.write('\n')
 
+        count = 0
         for zz in range(ngz):
             for yy in range(ngy):
                 for xx in range(ngx):
+                    count += 1
                     f.write('%22.11e' % self.chgden[xx, yy, zz])
-#                    chksum = xx + yy + zz
-                    if ( (xx + 1) % 5 == 0):
+                    if (count % 5 == 0):
                         f.write('\n')
 
         f.close()

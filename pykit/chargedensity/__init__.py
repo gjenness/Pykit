@@ -2,5 +2,47 @@ import numpy as np
 import os
 import shutil as sh
 
-def chgread():
-    raise NotImplementedError
+
+def chgread(filename, posfile=None, format=None):
+    if ('chgcar' in filename.lower()) or ('aeccar' in filename.lower()):
+        from pykit.chargedensity.vasp import Chgcar
+        if (not posfile):
+            print 'VASP charge density requires an associated geometry file'
+            raise RuntimeError('No geometry found')
+
+        return Chgcar(filename, posfile=posfile, status='r')
+    elif('cube' in filename.lower()):
+        from pykit.chargedensity.cube import Cube
+        return Cube(filename, status='r')
+    else:
+        print 'Format of file %s not recognized.' % filename
+        raise RuntimeError('Bad file type')
+
+def chgwrite(chgobj, filename, format=None):
+# First gather the data needed.  Here chgobj is a ChargeDensity object that has been passed
+    lattice = chgobj.get_lattice()
+    latvec = chgobj.get_lattice_vectors()
+    coord = chgobj.get_coordinates()
+    chgden = chgobj.get_charge_density()
+    alist = chgobj.get_atom_list()
+    gpts = chgobj.get_grid_points()
+
+    if ('chgcar' in filename.lower()):
+        from pykit.chargedensity.vasp import Chgcar
+        nchgobj = Chgcar(status=None)
+    elif ('cube' in filename.lower()):
+        from pykit.chargedensity.cube import Cube
+        nchgobj = Cube(status=None)
+
+    print 'Writing charge density file %s.' % filename
+    print 'File type:  %s' % nchgobj.__class__.__name__.upper()
+
+    nchgobj.set_lattice(lattice)
+    nchgobj.set_lattice_vectors(latvec)
+    nchgobj.set_coordinates(coord)
+    nchgobj._set_charge_density(chgden)
+    nchgobj.set_atom_labels(alist)
+    nchgobj.set_grid_points(gpts)
+
+    nchgobj.write_chgfile(filename)
+    print 'File %s successfully written.' % filename

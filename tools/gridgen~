@@ -1,0 +1,325 @@
+#!/usr/bin/env python2.4
+
+import sys, time, optparse, math
+import numpy as np
+import numpy.linalg as la
+
+from pykit.geometry import geomread
+from pykit.chargedensity import chgread
+
+print '\n\n###################################'
+print '# ONLY WORKS FOR CUBIC UNIT CELLS #'
+print '###################################\n\n'
+
+# This is the best thing EVER
+parser = optparse.OptionParser()
+parser.add_option('--chgfile', dest='chgfile', default='CHGCAR',
+                  help='File containing the charge density')
+parser.add_option('--gridprint', dest='gprint', default=False,
+                  help='Determines if the grid is printed to a file')
+parser.add_option('--gridfile', dest='gfile', default='grid.txt',
+                  help='File containing the grid and density.')
+parser.add_option('--cutoff', dest='cut', default=0.0, type='float',
+                  help='Region to slice the charge density')
+parser.add_option('--axis', dest='axis', default='z',
+                  help='Axis to cut the density along')
+parser.add_option('--figure', dest='figure', default='figure.eps',
+                  help='File where the charge density map is to be printed')
+parser.add_option('--posfile', dest='posfile',
+                  help='File containing the geometry.  Optional.')
+parser.add_option('--showatoms', dest='labels',
+                  help='Which atoms to show, i.e. Ti,O etc')
+parser.add_option('--atomcutoff', dest='acut', default=0.25, type='float',
+                  help='Shows atoms within acut near the slice')
+
+(options, args) = parser.parse_args()
+
+#print options
+#print options.posfile, type(options.posfile)
+print 'Charge density located in file', options.chgfile
+
+if (not options.posfile):
+    t1 = chgread(options.chgfile)
+elif (options.posfile):
+    t1 = chgread(options.chgfile, posfile=options.posfile)
+
+if (not options.labels):
+    options.labels = str()
+
+grid = t1.get_grid_points()
+cell = t1.get_lattice_vectors()
+chgden = t1.get_charge_density()
+
+data = dict() # Dictionary holding the relevant data
+
+if (options.posfile is not None):
+    print 'Reading geometry from', options.posfile
+    geom = geomread(options.posfile)
+    positions = geom.get_positions()
+    atomlist = geom.get_atom_list()
+elif (options.posfile is None):
+    print 'No geometry file given.'
+
+lx = la.norm(cell[0])
+ly = la.norm(cell[1])
+lz = la.norm(cell[2])
+
+theta_ab = math.degrees( math.acos(np.dot(cell[0], cell[1]) / (lx * ly)) )
+theta_ac = math.degrees( math.acos(np.dot(cell[0], cell[2]) / (lx * lz)) )
+theta_bc = math.degrees( math.acos(np.dot(cell[1], cell[2]) / (ly * lz)) )
+
+print '\nAngle between a- and b-axis:  %6.2f' % theta_ab
+print 'Angle between a- and c-axis:  %6.2f' % theta_ac
+print 'Angle between b- and c-axis:  %6.2f' % theta_bc
+
+if (theta_ab == theta_ac == theta_bc == 90.0):
+    cubic = True
+    print 'Cubic unit cell found.'
+else:
+    cubic = False
+    print 'Non-cubic unit cell found.'
+    print 'WARNING:  Figures from a non-cubic unit cell might be odd looking.'
+
+ngx = int(grid[0])
+ngy = int(grid[1])
+ngz = int(grid[2])
+
+# Step sizes
+sx = lx / ngx
+sy = ly / ngy
+sz = lz / ngz
+
+# Grid
+xgrid = np.arange(0, lx, sx)
+ygrid = np.arange(0, ly, sy)
+zgrid = np.arange(0, lz, sz)
+
+ynew = np.zeros(( len(ygrid), 2))
+ynew[:, 1] = ygrid
+
+t1 = time.time()
+rotate = math.radians(90.0 - theta_ab)
+#rotate = math.radians(0.0)
+for i in range(len(ynew)):
+    xprime =  ynew[i, 0] * math.cos(rotate) + ynew[i, 1] * math.sin(rotate)
+    yprime = -ynew[i, 0] * math.sin(rotate) + ynew[i, 1] * math.cos(rotate)
+
+    ynew[i, 0] = xprime
+    ynew[i, 1] = yprime
+t2 = time.time()
+print 'Time for rotation:%8.4f seconds.' % (t2 - t1)
+
+if (options.cut == 0.0):
+    print '\n\nWriting xyz-grid and density to %s.' % options.gfile
+    gridfile = open(options.gfile, 'w')
+    for i in xrange(ngx):
+        xpos = xgrid[i]
+        for j in xrange(ngy):
+            ypos = ygrid[j]
+            for k in xrange(ngz):
+                zpos = zgrid[k]
+                gridfile.write('%-20.8f%-20.8f%-20.8f%20.8f\n' % (xpos, ypos, zpos, chgden[i,j,k]))
+    gridfile.close()
+else:
+    print '\n\nExtracting cut.'
+    print 'Gathering data.'
+
+    t1 = time.time()
+    griddata = np.zeros((ngx*ngy*ngz, 4))
+
+    zindex = 0
+    yindex = 0
+    xindex = 0
+
+    for i in xrange(ngz*ngy):
+        for j in xrange(ngx):
+            griddata[xindex, 0] = xgrid[j] + ynew[yindex, 0]
+            griddata[xindex, 1] = ynew[yindex, 1]
+            griddata[xindex, 2] = zgrid[zindex]
+            griddata[xindex, 3] = chgden[j, yindex, zindex]
+            xindex += 1
+        yindex += 1
+        if (yindex == ngy):
+            zindex += 1
+            yindex = 0
+
+    t2 = time.time()
+    print 'Time for data gathering:%8.4f seconds.' % (t2 - t1)
+
+# Sort by the z component
+# Depending on how I arrange the data, this sort function is extraneous
+    print 'Sorting data.'
+    t1 = time.time()
+    if (options.axis.lower() == 'z'):
+        gsort = sorted(griddata, key=lambda t: t[2])
+    elif (options.axis.lower() == 'x'):
+        gsort = sorted(griddata, key=lambda t: t[0])
+    elif (options.axis.lower() == 'y'):
+        gsort = sorted(griddata, key=lambda t: t[1])
+    t2 = time.time()
+    print 'Time for sort:%8.4f seconds.' % (t2 - t1)
+
+    t1 = time.time()
+    gsort = np.array(gsort)
+    t2 = time.time()
+    print 'Time for re-convert:%8.4f seconds.' % (t2 - t1)
+
+    if (bool(options.gprint)):
+        print '\nWriting sorted xyz-grid and density to %s.' % options.gfile
+        gridfile = open(options.gfile, 'w')
+        for i in xrange(len(gsort)):
+            for j in xrange(4):
+                gridfile.write('%20.8f' % gsort[i, j])
+            gridfile.write('\n')
+        gridfile.close()
+    elif (not bool(options.gprint)):
+        print '\nxyz-grid and density not writen to file'
+
+# grab nearest z-value to the cut
+# Generalize to either x, y, or z cuts
+    cutnew = 0.0
+    cutprev = 0.0
+    indexnew = 0
+    indexprev = 0
+
+    if (options.axis.lower() == 'z'):
+        grid = zgrid
+        gindex = ngz
+    elif (options.axis.lower() == 'x'):
+        grid = xgrid
+        gindex = ngx
+    elif (options.axis.lower() == 'y'):
+        grid = ygrid
+        gindex = ngy
+
+    for i in xrange(gindex):
+        cutprev = cutnew
+        indexprev = indexnew
+
+        cutnew = grid[i]
+        indexnew = i
+
+        if cutnew > options.cut:
+            break
+    else:
+        raise RuntimeError('Cutoff not found')
+
+    diff1 = abs(cutnew - options.cut)
+    diff2 = abs(cutprev - options.cut)
+
+    if (diff1 > diff2):
+        cutoff = cutprev
+        index = indexprev
+    elif (diff2 > diff1):
+        cutoff = cutnew
+        index = indexnew
+
+    print '%s-axis grid value nearest to the cutoff is %-8.4f' % (options.axis.upper(), cutoff)
+    print 'Extracting the xy-grid for z-grid of %-8.4f' % cutoff 
+
+    if (options.axis.lower() == 'z'):
+        start = (ngx * ngy) * index
+        finish = (ngx * ngy) * (index + 1)
+    elif (options.axis.lower() == 'x'):
+        start = (ngz * ngy) * index
+        finish = (ngz * ngy) * (index + 1)
+    elif (options.axis.lower() == 'y'):
+        start = (ngx * ngz) * index
+        finish = (ngx * ngz) * (index + 1)
+
+# Assumes that the data is in the XY plane, need to generalize this
+#    print 'Data located between blocks', start, finish
+#    count = 0
+#    test = open('test.txt', 'w')
+#    for i in xrange(start, finish):
+#        test.write('%20.8f%20.8f%20.8f\n' % (gsort[i, 0], gsort[i, 1], gsort[i, 3]))
+#        count += 1
+#        if (count == (ngx)):
+#            test.write('\n')
+#            count = 0
+#    test.close()
+
+###########################################################################################
+# Anything from here on out refers ONLY to plotting the data! #############################
+###########################################################################################
+
+    import matplotlib
+    import matplotlib.cm as cm
+    import matplotlib.mlab as mlab
+    import matplotlib.pyplot as plt
+
+    matplotlib.rcParams['xtick.direction'] = 'cross'
+    matplotlib.rcParams['ytick.direction'] = 'cross'
+
+    atomcolors = {'O': 'r',  # red
+                  'Ti': 'k', # black
+                  'Si': 'y', # yellow
+                  'Rh': 'm', # magenta
+                  'C': 'k',
+                 }
+
+    if (options.axis.lower() == 'z'):
+        idx = (0, 1)
+    elif (options.axis.lower() == 'x'):
+        idx = (1, 2)
+    elif (options.axis.lower() == 'y'):
+        idx = (0, 2)
+
+    print 'Index test:', idx
+    xx = gsort[start:finish, idx[0]]
+    yy = gsort[start:finish, idx[1]]
+
+# Wrap anything below zero, and above the axis
+    adjust = max(xx)
+    boundary = la.norm(cell[idx[0]])
+    for i in xrange(len(xx)):
+        if (xx[i] < 0.0):
+            xx[i] += adjust
+        elif (xx[i] > boundary):
+            xx[i] -= adjust
+
+    adjust = max(yy)
+    boundary = la.norm(cell[idx[1]])
+    for i in xrange(len(yy)):
+        if (yy[i] < 0.0):
+            yy[i] += adjust
+        elif (yy[i] > cell[idx[1], idx[1]]):
+            yy[i] -= adjust
+
+    den = gsort[start:finish, 3]
+
+    xi = np.linspace(min(xx), max(xx))
+    yi = np.linspace(min(yy), max(yy))
+    zi = mlab.griddata(xx, yy, den, xi, yi)
+
+    plt.figure()
+#    CS = plt.contour(xi, yi, zi, 10, colors='k', linewidths=1)
+#    plt.clabel(CS, fontsize=6, fmt='%1.1f')
+
+    CS = plt.contourf(xi, yi, zi, cmap=cm.Blues)
+    CB = plt.colorbar(CS, extend='both', shrink=0.8)
+
+    if (options.posfile is not None):
+        alist = options.labels.split(',')
+
+        low = options.cut - options.acut
+        high = options.cut + options.acut
+        index = {'x':0, 'y':1, 'z':2}
+        pidx = index[options.axis.lower()]
+
+        for atom in alist:
+            xp = list()
+            yp = list()
+            for n,pos in enumerate(positions):
+                if (pos[pidx] < high) and (pos[pidx] > low) and (atomlist[n] == atom):
+                    xp.append(pos[idx[0]])
+                    yp.append(pos[idx[1]])
+            plt.scatter(xp, yp, s=900, facecolors='none', edgecolors=atomcolors[atom])
+
+# plt.imshow inserts an "image" and superimposes it onto the contour
+#    im = plt.imshow(zi, cmap=cm.gray, extent=(min(xx), max(xx), min(yy), max(yy)))
+#    CBI = plt.colorbar(im, orientation='horizontal', shrink=0.5)
+
+    plt.xlim( [min(xx), max(xx)] )
+    plt.ylim( [min(yy), max(yy)] )
+    plt.savefig(options.figure)
