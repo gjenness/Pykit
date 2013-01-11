@@ -3,7 +3,7 @@ import numpy as np
 import os
 import warnings
 
-from mastobj import MASTobj
+from pykit.util.mastobj import MASTobj
 
 
 # allowed_keys is a dictionary containing all the allowed keywords for a class
